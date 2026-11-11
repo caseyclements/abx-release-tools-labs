@@ -21,7 +21,12 @@ SETUP = ACTIONS / "setup" / "setup.sh"
 # macOS `/usr/bin/git` is an xcrun shim that cannot load under a stripped environment, which failed
 # the whole file for a reason that had nothing to do with the script.
 _GIT = shutil.which("git")
-PATH = ":".join(dict.fromkeys(([str(Path(_GIT).parent)] if _GIT else []) + ["/usr/bin", "/bin", "/usr/local/bin"]))
+PATH = ":".join(
+    dict.fromkeys(
+        ([str(Path(_GIT).parent)] if _GIT else [])
+        + ["/usr/bin", "/bin", "/usr/local/bin"]
+    )
+)
 
 SECRET = {
     "GARASIGN_USERNAME": "ai-builder-experience",
@@ -168,12 +173,18 @@ def test_it_runs_in_a_job_that_checked_nothing_out(tmp_path: Path, runner) -> No
     assert "not in a git directory" not in result.stderr
 
 
-def test_it_sets_the_bot_identity_where_a_later_checkout_will_find_it(tmp_path: Path, runner) -> None:
+def test_it_sets_the_bot_identity_where_a_later_checkout_will_find_it(
+    tmp_path: Path, runner
+) -> None:
     """Setting it globally is only useful if it is actually readable as the committer identity."""
     setup(tmp_path, runner)
 
+    # `check=False`, deliberately: `git config --get` exits 1 when the key is simply unset, which is
+    # the exact failure this test exists to catch. Raising on it would report an exit code and skip
+    # the assertion below, so the message would never name what was expected.
     shown = subprocess.run(
         ["git", "config", "--global", "--get", "user.name"],
+        check=False,
         env={"PATH": PATH, "HOME": runner["HOME"]},
         capture_output=True,
         text=True,
