@@ -16,10 +16,8 @@ from conftest import ACTIONS
 
 SETUP = ACTIONS / "setup" / "setup.sh"
 
-# The script runs with a deliberately small environment, so that a variable it needs has to be
-# passed rather than inherited from whoever ran the tests. git's own directory is added because on
-# macOS `/usr/bin/git` is an xcrun shim that cannot load under a stripped environment, which failed
-# the whole file for a reason that had nothing to do with the script.
+# Scopes PATH so a variable the script needs must be passed, not inherited from whoever ran the
+# tests. git's own directory is kept because macOS `/usr/bin/git` is an xcrun shim that needs it.
 _GIT = shutil.which("git")
 PATH = ":".join(
     dict.fromkeys(
@@ -39,10 +37,7 @@ SECRET = {
 def runner(tmp_path: Path) -> dict[str, str]:
     """A runner's temp directory, and a HOME of its own for the git identity to land in.
 
-    Deliberately not a git repository. An earlier version of this fixture ran `git init` here, which
-    made every test in this file pass while `setup.sh` could not run in a job that checks nothing
-    out -- the shape every artifact-only job has. The fixture was supplying the one thing the script
-    silently required.
+    Deliberately not a git repository, which `setup.sh` must not require.
     """
     home = tmp_path / "home"
     home.mkdir()
@@ -158,14 +153,11 @@ def test_the_asset_directories_exist_and_record_the_run(tmp_path: Path, runner) 
     ).read_text().strip() == "424242"
 
 
-def test_it_runs_in_a_job_that_checked_nothing_out(tmp_path: Path, runner) -> None:
-    """The shape of every artifact-only job: download, sign, upload, no working tree.
-
-    `git config` without `--global` needs a repository, and `set -e` turns that into a failed setup
-    rather than a warning -- so a job wired exactly as the signing guide describes dies on
-    `fatal: not in a git directory` before any credential has been written anywhere.
-    """
-    assert not (tmp_path / ".git").exists(), "this test is meaningless in a repository"
+def test_setup_runs_in_a_job_that_checked_nothing_out(tmp_path: Path, runner) -> None:
+    """`setup.sh` must work with no working tree, the shape of every artifact-only job."""
+    assert not (tmp_path / ".git").exists(), (
+        "Failed because test ran inside a repository"
+    )
 
     result = setup(tmp_path, runner)
 
@@ -173,20 +165,18 @@ def test_it_runs_in_a_job_that_checked_nothing_out(tmp_path: Path, runner) -> No
     assert "not in a git directory" not in result.stderr
 
 
-def test_it_sets_the_bot_identity_where_a_later_checkout_will_find_it(
+def test_setup_sets_the_bot_identity_where_a_later_checkout_will_find_it(
     tmp_path: Path, runner
 ) -> None:
-    """Setting it globally is only useful if it is actually readable as the committer identity."""
+    """A global identity is only useful if git actually reads it back as the committer."""
     setup(tmp_path, runner)
 
-    # `check=False`, deliberately: `git config --get` exits 1 when the key is simply unset, which is
-    # the exact failure this test exists to catch. Raising on it would report an exit code and skip
-    # the assertion below, so the message would never name what was expected.
+    # `check=False`, so an unset key reaches the assertion below instead of raising on exit 1.
     shown = subprocess.run(
         ["git", "config", "--global", "--get", "user.name"],
-        check=False,
         env={"PATH": PATH, "HOME": runner["HOME"]},
         capture_output=True,
         text=True,
+        check=False,
     )
     assert shown.stdout.strip() == "mongodb-dbx-release-bot[bot]", shown.stderr

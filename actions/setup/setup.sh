@@ -69,12 +69,8 @@ S3_ASSETS=$S3_ASSETS
 SECURITY_REPORT_URL=${SECURITY_REPORT_URL:-}
 EOF
 
-# --global, not repository-local. A composite action cannot know whether the job that called it
-# checked anything out, and several legitimately do not: a job that downloads an artifact, signs it
-# and uploads it has no use for a working tree. Repository-local `git config` fails in such a job
-# with `fatal: not in a git directory`, and because this script runs under `set -e` that failure
-# takes the whole setup with it -- before the release assets directory has even been created. The
-# global file is writable either way, and a later checkout in the same job still inherits it.
+# --global because a caller may not have checked anything out, and a repository-local `git config`
+# would fail such a job with `fatal: not in a git directory`.
 echo "Set up git credentials"
 git config --global user.email "167856002+mongodb-dbx-release-bot[bot]@users.noreply.github.com"
 git config --global user.name "mongodb-dbx-release-bot[bot]"
